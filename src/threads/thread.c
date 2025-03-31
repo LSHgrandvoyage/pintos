@@ -23,6 +23,8 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static struct list sleep_list;
+static int64_t target_time;
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -84,6 +86,45 @@ static tid_t allocate_tid (void);
 
    It is not safe to call thread_current() until this function
    finishes. */
+void thread_sleep(int64_t ticks){
+
+  struct thread *current_thread = thread_current();
+  enum intr_level original_level = intr_disable();
+  
+  if (ticks <= 0){ //validate
+    printf("Invalid ticks are detected");
+    ASSERT(0);
+  }
+
+  if (current_thread == idle_thread){  // idle_thread can't be slept
+    printf("current_thread = idle_thread");
+    ASSERT(0);
+  }
+  
+  current_thread -> target_time = ticks;
+  list_push_back(&sleep_list, &current_thread -> elem);
+  thread_block();
+  intr_set_level(original_level);
+
+}
+
+void
+thread_wakeup(int64_t wtime){
+  struct list_elem *current_elem = list_begin(&sleep_list);
+
+  while (current_elem != list_end(&sleep_list)){
+    struct thread *sleeping_thread = list_entry(current_elem, struct thread, elem);
+    
+    if (sleeping_thread -> target_time <= wtime){
+      current_elem = list_remove(&sleeping_thread -> elem);
+      thread_unblock(sleeping_thread);
+    }
+    else{
+      current_elem = list_next(current_elem);
+    }
+  }
+}
+
 void
 thread_init (void) 
 {
@@ -92,6 +133,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
