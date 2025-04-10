@@ -93,7 +93,7 @@ void thread_sleep(int64_t ticks){
   
   if (ticks <= 0){ //validate
     printf("Invalid ticks are detected");
-    ASSERT(0);
+    return;
   }
 
   if (current_thread == idle_thread){  // idle_thread can't be slept
