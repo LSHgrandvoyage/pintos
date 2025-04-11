@@ -16,7 +16,13 @@ void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
 void sema_self_test (void);
+bool compare_semaphore_priority(const struct list_elem *a, const struct list_elem *b, void *aux);
 
+struct semaphore_elem
+  {
+    struct list_elem elem;
+    struct semaphore semaphore;
+  };
 /* Lock. */
 struct lock 
   {
