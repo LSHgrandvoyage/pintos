@@ -91,8 +91,7 @@ void thread_sleep(int64_t ticks){
   struct thread *current_thread = thread_current();
   enum intr_level original_level = intr_disable();
   
-  if (ticks <= 0){ //validate
-    printf("Invalid ticks are detected");
+  if (ticks < 0){ //validate
     return;
   }
 
@@ -409,7 +408,7 @@ compare_priority (const struct list_elem *a, const struct list_elem *b, void* au
 
 void
 preempt_by_priority(void){
-  if (!list_empty(&ready_list)){
+  if (!list_empty(&ready_list) && thread_current() != idle_thread){
     if(list_entry(list_front(&ready_list), struct thread, elem)->priority > thread_current()->priority){
       thread_yield();
     }
