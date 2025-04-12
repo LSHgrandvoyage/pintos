@@ -389,8 +389,9 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
-  
+  struct thread *curr = thread_current();
+  curr->original_priority = new_priority;
+  update_priority_before_donations(); 
   preempt_by_priority();
 }
 
@@ -530,6 +531,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  t->original_priority = priority;
+  t->wait_on_lock = NULL;
+  list_init(&(t->donations));
   list_push_back (&all_list, &t->allelem);
 }
 
