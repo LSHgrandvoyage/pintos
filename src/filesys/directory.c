@@ -36,13 +36,20 @@ dir_open (struct inode *inode)
 {
   struct dir *dir = calloc (1, sizeof *dir);
   if (inode != NULL && dir != NULL)
-    {
+    { 
+      //printf("NO PROBLEM");
       dir->inode = inode;
       dir->pos = 0;
       return dir;
     }
   else
     {
+      /*if (inode == NULL){
+        printf("inode is NULL");
+      }
+      if (dir == NULL){
+        printf("dir is NULL"); 
+      }*/
       inode_close (inode);
       free (dir);
       return NULL; 

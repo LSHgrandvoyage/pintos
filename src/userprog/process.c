@@ -25,23 +25,108 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
+
+void
+get_file_name(char *file_name, char *only_file_name){
+  int i = 0;
+
+  strlcpy(only_file_name, file_name, strlen(file_name) + 1);
+
+  while (only_file_name[i] != '\0' && only_file_name[i] != ' '){
+    i++;
+  }
+
+  only_file_name[i] = '\0';
+}
+
+void
+stacking_arg(char *file_name, void **esp){
+  int i, len, padding;
+  int argc = 0;
+  int total_len = 0;
+  char buffer[256];
+  char *token, *last;
+  char *argv[64];
+  char *arg_ptrs[64];
+  
+  // printf("\nargument_stack function start\n");
+  /* copy & parse */
+  strlcpy(buffer, file_name, sizeof(buffer));
+  
+  /* argc, argv */
+  for (token = strtok_r(buffer, " ", &last); token != NULL; token = strtok_r(NULL, " ", &last)){
+    argv[argc++] = token;
+  }
+  
+  /* stacking */
+  for (i = argc - 1; i >= 0; i--){ 
+    len = strlen(argv[i]) + 1;
+    *esp -= len;
+    memcpy(*esp, argv[i], len);
+    arg_ptrs[i] = *esp;
+    total_len += len;
+  }
+  
+  /* word align */
+  padding = (4 - (total_len % 4)) % 4;
+  *esp -= padding;
+  memset(*esp, 0, padding);
+  
+  /* NULLing */
+  *esp -= 4;
+  *(uint32_t *)(*esp) = 0;
+ 
+  /* argv[i] address */
+  for (i = argc - 1; i >= 0; i--){
+    *esp -= 4;
+    *(uint32_t *)(*esp) = (uint32_t)arg_ptrs[i];
+  }
+
+  /* argv address */
+  char **argv_address = (char **)*esp;
+  *esp -= 4;
+  *(uint32_t *)(*esp) = (uint32_t)argv_address;
+
+  /* argc */
+  *esp -= 4;
+  *(uint32_t *)(*esp) = argc;
+
+  /* fake return address */
+  *esp -= 4;
+  *(uint32_t *)(*esp) = 0;
+  //printf("\n\nargument_stack function done\n\n");
+  //hex_dump(*esp, *esp, 100, 1);
+}
+
+
 tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char commands[256];
   tid_t tid;
-
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  
+  get_file_name(file_name, commands);
+
+  if (filesys_open(commands) == NULL){
+    palloc_free_page(fn_copy);
+    return TID_ERROR;
+  }
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  tid = thread_create (commands, PRI_DEFAULT, start_process, fn_copy);
+
+  if (tid == TID_ERROR){
+    palloc_free_page (fn_copy);
+  }
+
   return tid;
 }
 
@@ -53,13 +138,25 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+  char commands[256];
+   
+ // printf("\n\n start_process start \n\n"); 
+ // printf("\n\n\n%s\n\n\n", file_name);
+  get_file_name(file_name, commands);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+
+  success = load (commands, &if_.eip, &if_.esp);
+  //if (!success) {
+    //printf("YOUFAILED");
+  //} 
+  if (success){
+    stacking_arg(file_name, &if_.esp); 
+  }
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -86,8 +183,29 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
+  struct thread *curr = thread_current();
+  struct list_elem *e = list_begin(&curr->child_list);
+  int exit_status;
+  
+  while (e != list_end(&curr->child_list)){
+    struct thread *child = list_entry(e, struct thread, child_elem);
+  
+    if (child->tid == child_tid) {
+      sema_down(&child->wait_sema);
+
+      exit_status = child->exit_status;
+      
+      list_remove(&child->child_elem);
+      
+      sema_up(&child->exit_sema);
+
+      return exit_status;
+    }
+    e = list_next(e);
+  }
+
   return -1;
 }
 
@@ -97,7 +215,7 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-
+  
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -114,6 +232,9 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+   sema_up(&cur->wait_sema);
+   sema_down(&cur->exit_sema);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -326,21 +447,17 @@ static bool
 validate_segment (const struct Elf32_Phdr *phdr, struct file *file) 
 {
   /* p_offset and p_vaddr must have the same page offset. */
-  if ((phdr->p_offset & PGMASK) != (phdr->p_vaddr & PGMASK)) 
+  if ((phdr->p_offset & PGMASK) != (phdr->p_vaddr & PGMASK))
     return false; 
-
   /* p_offset must point within FILE. */
-  if (phdr->p_offset > (Elf32_Off) file_length (file)) 
+  if (phdr->p_offset > (Elf32_Off) file_length (file))
     return false;
-
   /* p_memsz must be at least as big as p_filesz. */
-  if (phdr->p_memsz < phdr->p_filesz) 
+  if (phdr->p_memsz < phdr->p_filesz)
     return false; 
-
   /* The segment must not be empty. */
   if (phdr->p_memsz == 0)
     return false;
-  
   /* The virtual memory region must both start and end within the
      user address space range. */
   if (!is_user_vaddr ((void *) phdr->p_vaddr))
@@ -358,8 +475,9 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
      it then user code that passed a null pointer to system calls
      could quite likely panic the kernel by way of null pointer
      assertions in memcpy(), etc. */
-  if (phdr->p_vaddr < PGSIZE)
-    return false;
+  if (phdr->p_vaddr < PGSIZE){
+     return false;
+  }
 
   /* It's okay. */
   return true;

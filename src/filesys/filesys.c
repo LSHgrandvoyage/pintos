@@ -69,8 +69,11 @@ filesys_open (const char *name)
   struct dir *dir = dir_open_root ();
   struct inode *inode = NULL;
 
-  if (dir != NULL)
+  //printf("FILESYS_OPEN here\n");
+  if (dir != NULL){
+    //printf("DIR == NULL\n");
     dir_lookup (dir, name, &inode);
+  }
   dir_close (dir);
 
   return file_open (inode);

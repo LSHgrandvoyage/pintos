@@ -86,6 +86,20 @@ static tid_t allocate_tid (void);
 
    It is not safe to call thread_current() until this function
    finishes. */
+
+struct thread *
+get_thread_by_tid(tid_t tid){
+  struct list_elem *e;
+  
+  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t->tid == tid){
+      return t;
+    }
+  return NULL;
+  }
+}
+
 void thread_sleep(int64_t ticks){
 
   struct thread *current_thread = thread_current();
@@ -536,6 +550,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->waiting_lock = NULL;
   list_init(&(t->donations));
   list_push_back (&all_list, &t->allelem);
+
+  sema_init(&(t->wait_sema), 0);
+  sema_init(&(t->exit_sema), 0);
+  list_init(&(t->child_list));
+  list_push_back(&(running_thread()->child_list), &(t->child_elem));
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
