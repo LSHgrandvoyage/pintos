@@ -9,16 +9,19 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "filesys/filesys.h"
+#include "filesys/directory.h"
 
 typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
+bool validate_filename(const char *file);
 
 void halt (void);
 void exit (int status);
 pid_t exec (const char *cmd_line);
 int wait (pid_t pid);
 bool create (const char *file, unsigned initial_size);
+bool remove (const char *file);
 int write (int fd, const void *buffer, unsigned size);
 
 void
@@ -31,6 +34,17 @@ static void
 check_validation(const void *vaddr){
   if (vaddr == NULL || !is_user_vaddr(vaddr) || !pagedir_get_page(thread_current()->pagedir, vaddr)){
     exit(-1);
+  }
+}
+
+static void
+check_str_validation (const char *str){
+  while (true){
+    check_validation(str);
+    if (*str == '\0') {
+      break;
+    }
+    str++;
   }
 }
 
@@ -60,7 +74,9 @@ syscall_handler (struct intr_frame *f)
 	check_validation(&esp[2]);
 	f->eax = create((const char *)esp[1], (unsigned)esp[2]);
 	break;
-    case SYS_REMOVE: break;
+    case SYS_REMOVE:
+	check_validation((const void *)esp[1]);
+	f->eax = remove((const char *)esp[1]);
     case SYS_OPEN: break;
     case SYS_FILESIZE: break;
     case SYS_READ: break;
@@ -104,10 +120,23 @@ wait (pid_t pid){
 
 bool
 create (const char *file, unsigned initial_size){
-  if (file == NULL || strlen(file) == 0){
-    exit(-1);
+  if (file == NULL || !validate_filename(file)){
+    return false;
   }
+
+  if (filesys_open(file) != NULL){
+    return false;
+  }
+
   return filesys_create(file, initial_size);
+}
+
+bool
+remove (const char *file){
+  if (validate_filename(file)){
+    return false;
+  }
+  return filesys_remove(file);
 }
 
 int
@@ -117,4 +146,11 @@ write (int fd, const void *buffer, unsigned size){
    return size;
   }
   return -1;
+}
+
+bool
+validate_filename(const char* file){
+  check_str_validation(file);
+  int len = strlen(file);
+  return len > 0 && len <= NAME_MAX;
 }
