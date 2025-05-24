@@ -107,6 +107,8 @@ struct thread
     struct semaphore wait_sema;
     struct semaphore exit_sema;
     
+    struct list fd_table;
+    int next_fd;
 #endif
 
     /* Owned by thread.c. */
