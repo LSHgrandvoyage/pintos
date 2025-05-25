@@ -126,7 +126,7 @@ process_execute (const char *file_name)
   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
   }
-
+  
   return tid;
 }
 
@@ -233,8 +233,8 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 
-   sema_up(&cur->wait_sema);
-   sema_down(&cur->exit_sema);
+    sema_up(&cur->wait_sema);
+    sema_down(&cur->exit_sema);
 }
 
 /* Sets up the CPU for running user code in the current

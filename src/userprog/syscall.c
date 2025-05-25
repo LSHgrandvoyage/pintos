@@ -28,6 +28,9 @@ int open (const char *file);
 int filesize (int fd);
 int read (int fd, void *buffer, unsigned size);
 int write (int fd, const void *buffer, unsigned size);
+void seek (int fd, unsigned position);
+int tell (int fd);
+void close (int fd);
 
 struct file_descriptor {
   int fd;
@@ -87,6 +90,7 @@ syscall_handler (struct intr_frame *f)
     case SYS_REMOVE:
 	check_validation((const void *)esp[1]);
 	f->eax = remove((const char *)esp[1]);
+	break;
     case SYS_OPEN: 
 	check_validation((const void *)esp[1]);
 	f->eax = open((const char *)esp[1]);
@@ -107,9 +111,19 @@ syscall_handler (struct intr_frame *f)
         check_validation(&esp[3]);
         f->eax = write((int)esp[1], (void *)esp[2], (unsigned)esp[3]);
         break;
-    case SYS_SEEK: break;
-    case SYS_TELL: break;
-    case SYS_CLOSE: break;
+    case SYS_SEEK: 
+	check_validation(&esp[1]);
+	check_validation(&esp[2]);
+	seek((int)esp[1], (unsigned)esp[2]);
+	break;
+    case SYS_TELL:
+	check_validation(&esp[1]);
+	f->eax = tell((int)esp[1]);
+	break;
+    case SYS_CLOSE:
+	check_validation(&esp[1]);
+	close((int)esp[1]);
+	break;
     default: exit(-1);
   }
 
@@ -154,7 +168,7 @@ create (const char *file, unsigned initial_size){
 
 bool
 remove (const char *file){
-  if (validate_filename(file)){
+  if (!validate_filename(file)){
     return false;
   }
   return filesys_remove(file);
@@ -165,12 +179,16 @@ open (const char *file){
   if (file == NULL || !validate_filename(file)){
     return -1;
   }
-  
+
   struct file *f = filesys_open(file);
   if (f == NULL){
     return -1;
   }
-
+ 
+  if (strcmp(thread_current()->name, file) == 0){
+    file_deny_write(f);
+  }
+ 
   struct thread *curr = thread_current();
   struct file_descriptor *fd_struct = palloc_get_page(PAL_ZERO);
   if (fd_struct == NULL){
@@ -216,7 +234,8 @@ read (int fd, void *buffer, unsigned size){
   for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
     struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
     if (fd_struct->fd == fd){
-     return file_read(fd_struct->file, buffer, size);
+      int temp = file_read(fd_struct->file, buffer, size);
+      return temp;
     }
   }
   return -1;
@@ -226,24 +245,72 @@ int
 write (int fd, const void *buffer, unsigned size){
   check_validation(buffer);
   struct thread *curr = thread_current();
-  
+  struct list_elem *e;
+
   if (fd == 1){
    putbuf(buffer, size);
    return size;
   }
-  
-  struct list_elem *e;
+ 
   for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
     struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
     if (fd_struct->fd == fd){
-      return file_write(fd_struct->file, buffer, size);
+      int temp = file_write(fd_struct->file, buffer, size);
+      return temp;
     }
   }
   return -1;
 }
 
+void
+seek (int fd, unsigned position){
+  struct thread *curr = thread_current();
+  struct list_elem *e;
+
+  for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
+    struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
+    if (fd_struct->fd == fd){
+      file_seek(fd_struct->file, position);
+      return;
+    }
+  }
+  return ;
+}
+
+int
+tell (int fd){
+  struct thread *curr = thread_current();
+  struct list_elem *e;
+
+  for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
+    struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
+    if (fd_struct->fd == fd){
+      return file_tell(fd_struct->file);
+    }
+  }
+  return -1;
+}
+
+void
+close (int fd){
+  struct thread *curr = thread_current();
+  struct list_elem *e;
+
+  for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
+    struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
+    if (fd_struct->fd == fd){
+      file_allow_write(fd_struct->file);
+      file_close(fd_struct->file);
+      list_remove(&fd_struct->elem);
+      palloc_free_page(fd_struct);
+      return;
+    }
+  }
+  return;
+}
+
 bool
-validate_filename(const char* file){
+validate_filename (const char* file){
   check_str_validation(file);
   int len = strlen(file);
   return len > 0 && len <= NAME_MAX;
