@@ -26,6 +26,20 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 
+static struct
+thread *tid_get_child (tid_t child_tid){
+  struct list_elem *e;
+  struct thread *parent = thread_current();
+
+  for (e = list_begin(&parent->child_list); e != list_end(&parent->child_list); e = list_next(e)){
+    struct thread *t = list_entry(e, struct thread, child_elem);
+    if (t->tid == child_tid){
+      return t;
+    }
+  }
+  return NULL;
+}
+
 void
 get_file_name(char *file_name, char *only_file_name){
   int i = 0;
@@ -105,7 +119,7 @@ process_execute (const char *file_name)
   char *fn_copy;
   char commands[256];
   tid_t tid;
-  
+  struct list_elem *e; 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -113,7 +127,7 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
   
-  get_file_name(file_name, commands);
+  get_file_name((char *)file_name, commands);
 
   if (filesys_open(commands) == NULL){
     palloc_free_page(fn_copy);
@@ -122,9 +136,18 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (commands, PRI_DEFAULT, start_process, fn_copy);
-
   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
+    return TID_ERROR;
+  }
+  
+  struct thread *c = tid_get_child(tid);
+  if (c != NULL){
+    sema_down(&c->load_sema);
+  }
+
+  if (!c->load_success){
+    return TID_ERROR;
   }
 
   return tid;
@@ -154,15 +177,21 @@ start_process (void *file_name_)
   //if (!success) {
     //printf("YOUFAILED");
   //} 
+
+  struct thread *curr = thread_current();
+  curr->load_success = success;
+  sema_up(&curr->load_sema);
+
   if (success){
     stacking_arg(file_name, &if_.esp); 
+    thread_current()->load_success = true;
   }
-
+  
+  if (!success){
+    palloc_free_page(file_name);
+    thread_exit();
+  }
   /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
-
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -182,6 +211,7 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
+
 int
 process_wait (tid_t child_tid) 
 {
@@ -215,7 +245,9 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
-  
+ 
+  sema_up(&cur->wait_sema);
+  sema_down(&cur->exit_sema); 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -232,9 +264,6 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-
-   sema_up(&cur->wait_sema);
-   sema_down(&cur->exit_sema);
 }
 
 /* Sets up the CPU for running user code in the current
