@@ -551,13 +551,17 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&(t->donations));
   list_push_back (&all_list, &t->allelem);
 
-  sema_init(&(t->wait_sema), 0);
-  sema_init(&(t->exit_sema), 0);
-  list_init(&(t->child_list));
+  sema_init(&t->wait_sema, 0);
+  sema_init(&t->exit_sema, 0);
+  list_init(&t->child_list);
   list_push_back(&(running_thread()->child_list), &(t->child_elem));
   
   list_init(&t->fd_table);
   t->next_fd = 2;
+  
+  sema_init(&t->load_sema, 0);
+  t->load_success = false;
+
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

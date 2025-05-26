@@ -12,6 +12,7 @@
 #include "filesys/directory.h"
 #include "threads/palloc.h"
 #include "filesys/file.h"
+#include "threads/synch.h"
 
 typedef int pid_t;
 
@@ -38,9 +39,12 @@ struct file_descriptor {
   struct list_elem elem;
 };
 
+struct lock f_lock;
+
 void
 syscall_init (void) 
 {
+  lock_init(&f_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -159,10 +163,6 @@ create (const char *file, unsigned initial_size){
     return false;
   }
 
-  if (filesys_open(file) != NULL){
-    return false;
-  }
-
   return filesys_create(file, initial_size);
 }
 
@@ -179,9 +179,11 @@ open (const char *file){
   if (file == NULL || !validate_filename(file)){
     return -1;
   }
-
+  
+  lock_acquire(&f_lock);
   struct file *f = filesys_open(file);
   if (f == NULL){
+    lock_release(&f_lock);
     return -1;
   }
  
@@ -193,12 +195,14 @@ open (const char *file){
   struct file_descriptor *fd_struct = palloc_get_page(PAL_ZERO);
   if (fd_struct == NULL){
     file_close(f);
+    lock_release(&f_lock);
     return -1;
   }
   
   fd_struct->fd = curr->next_fd++;
   fd_struct->file = f;
   list_push_back(&curr->fd_table, &fd_struct->elem);
+  lock_release(&f_lock);
 
   return fd_struct->fd;
 }
@@ -223,21 +227,25 @@ read (int fd, void *buffer, unsigned size){
   struct thread *curr = thread_current();
   struct list_elem *e;
   int i;
-  
+ 
+  lock_acquire(&f_lock); 
   if (fd == 0){
     for (i = 0; i < size; i++){
       ((char *)buffer)[i] = input_getc();
     }
-  return size;
+    lock_release(&f_lock);
+    return size;
   }
   
   for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
     struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
     if (fd_struct->fd == fd){
       int temp = file_read(fd_struct->file, buffer, size);
+      lock_release(&f_lock);
       return temp;
     }
   }
+  lock_release(&f_lock);
   return -1;
 }
 
@@ -247,18 +255,22 @@ write (int fd, const void *buffer, unsigned size){
   struct thread *curr = thread_current();
   struct list_elem *e;
 
+  lock_acquire(&f_lock);
   if (fd == 1){
-   putbuf(buffer, size);
-   return size;
+    putbuf(buffer, size);
+    lock_release(&f_lock);
+    return size;
   }
  
   for (e = list_begin(&curr->fd_table); e != list_end(&curr->fd_table); e = list_next(e)){
     struct file_descriptor *fd_struct = list_entry(e, struct file_descriptor, elem);
     if (fd_struct->fd == fd){
       int temp = file_write(fd_struct->file, buffer, size);
+      lock_release(&f_lock);
       return temp;
     }
   }
+  lock_release(&f_lock);
   return -1;
 }
 

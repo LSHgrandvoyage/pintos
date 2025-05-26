@@ -109,6 +109,9 @@ struct thread
     
     struct list fd_table;
     int next_fd;
+    
+    struct semaphore load_sema;
+    bool load_success;
 #endif
 
     /* Owned by thread.c. */
