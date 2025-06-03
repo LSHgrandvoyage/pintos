@@ -1,0 +1,21 @@
+#ifndef VM_PAGE_H
+#define VM_PAGE_H
+
+#include <hash.h>
+#include <stdbool.h>
+
+struct page {
+    void *upage;
+    void *kpage;
+    bool writable;
+    struct hash_elem elem;
+    bool is_loaded;
+};
+
+void page_init(struct hash *spt);
+struct page *page_lookup(struct hash *spt, void *upage);
+bool page_insert(struct hash *spt,struct page *p);
+void page_remove(struct hash *spt, void *upage);
+void page_table_destroy(struct hash *spt);
+
+#endif

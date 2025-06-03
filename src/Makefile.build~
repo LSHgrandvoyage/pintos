@@ -8,12 +8,9 @@ include ../../Make.config
 include ../Make.vars
 include ../../tests/Make.tests
 
-<<<<<<< HEAD
-=======
 
 
 
->>>>>>> problem1
 # Compiler and assembler options.
 kernel.bin: CPPFLAGS += -I$(SRCDIR)/lib/kernel
 
@@ -67,16 +64,11 @@ userprog_SRC += userprog/syscall.c	# System call handler.
 userprog_SRC += userprog/gdt.c		# GDT initialization.
 userprog_SRC += userprog/tss.c		# TSS management.
 
-<<<<<<< HEAD
-# No virtual memory code yet.
-#vm_SRC = vm/file.c			# Some file.
-=======
 # virtual memory code
-vm_SRC = vm/page.c			# Some file.
-KERNEL_SUBDIRS = threads userprog devices lib lib/kernel filesys vm
-KERNEL_SUBDIRS = threads devices lib lib/kernel userprog filesys vm
+# vm_SRC = vm/page.c			# Some file.
+# KERNEL_SUBDIRS = threads userprog devices lib lib/kernel filesys vm
+# KERNEL_SUBDIRS = threads devices lib lib/kernel userprog filesys vm
 
->>>>>>> problem1
 
 # Filesystem code.
 filesys_SRC  = filesys/filesys.c	# Filesystem core.

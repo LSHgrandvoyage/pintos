@@ -6,8 +6,6 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
-<<<<<<< HEAD
-=======
 
 #include "vm/page.h"
 #include "threads/vaddr.h"
@@ -15,7 +13,6 @@
 #include <string.h>
 #include "userprog/pagedir.h"
 
->>>>>>> problem1
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -166,20 +163,6 @@ page_fault (struct intr_frame *f)
     f->eax = 0xffffffff;
     return;
   }
-<<<<<<< HEAD
-
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
-}
-
-=======
   void *upage = pg_round_down(fault_addr);  // 페이지 기준 주소로 정렬
   struct hash *spt = &thread_current()->spt;
 
@@ -209,10 +192,10 @@ page_fault (struct intr_frame *f)
   memset(kpage + p->read_bytes, 0, p->zero_bytes);
 
   /* 가상 주소와 물리 주소 매핑 */
-  if (!pagedir_set_page(thread_current()->pagedir, upage, kpage, p->writable)) {
+  if (!pagedir_set_page(thread_current()->pagedir,
+                      pg_round_down(fault_addr), kpage, page->writable)) {
     palloc_free_page(kpage);
-    kill(f);
-    return;
+    exit(-1);
   }
 
   /* 페이지 상태 갱신 */
@@ -221,4 +204,3 @@ page_fault (struct intr_frame *f)
 }
 
 
->>>>>>> problem1
